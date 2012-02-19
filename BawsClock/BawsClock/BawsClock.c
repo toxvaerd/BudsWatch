@@ -4,7 +4,7 @@
  * Created: 17-02-2012 19:17:59
  *  Author: Morten
  */ 
-#define F_CPU 1000000UL // 8Mhz
+#define F_CPU 8000000UL // 8Mhz Crystal Oscillator
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -27,10 +27,10 @@ int main (void)
 	
 	sei();
 	
-	OCR1AH = 0x3D;
-	OCR1AL = 0x08;
+	OCR1AH = 0x7A; // Prescaling to 31249
+	OCR1AL = 0x11; // -||-
 	
-	TCCR1B |= ((1 << CS10) | (1 << CS11)); // Set up timer at Fcpu/64 
+	TCCR1B |= (1 << CS12); // Set up timer at Fcpu/256
 
 	for (;;) 
 	{ 
