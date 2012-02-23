@@ -8,12 +8,13 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/delay.h>
 #include <util/atomic.h>
 #include <stdbool.h>
 
-static bool SecondElapsed = false,
-			Button0Pressed = false,
-			Button1Pressed = false;
+bool SecondElapsed = false,
+	 Button0Pressed = false,
+	 Button1Pressed = false;
 
 static unsigned char debounceB0,debounceB1,debouncedBState;
 // vertical stacked counter based debounce
@@ -38,19 +39,20 @@ unsigned debounceB(unsigned char sample)
     
     return changes;
 }
-unsigned digitToSevenSegment(unsigned char digit) {
+
+unsigned char digitToSevenSegment(unsigned char digit) {
 	switch (digit)
 	{
-	    case 0: return 0x7E;
-		case 1: return 0x30;
-		case 2: return 0x6D;
-		case 3: return 0x79;
-		case 4: return 0x33;
-		case 5: return 0x5B;
-		case 6: return 0x5F;
-		case 7: return 0x70;
+	    case 0: return 0x3F;
+		case 1: return 0x06;
+		case 2: return 0x5B;
+		case 3: return 0x4F;
+		case 4: return 0x66;
+		case 5: return 0x6D;
+		case 6: return 0x7D;
+		case 7: return 0x07;
 		case 8: return 0x7F;
-		case 9: return 0x7B;
+		case 9: return 0x6F;
 	    default:
 			return 0x00;
 		    break;
@@ -70,7 +72,7 @@ int main (void)
 	PORTC |= (1 << PC0) | (1 << PC1); // Turn on pullup resistors
 
 	/* SET UP TIMERS */
-	// Timer 0: Overflow counter for button debouncing
+	//Timer 0: Overflow counter for button debouncing
 	TCCR0 |= (1 << CS00) | (1 << CS01);
 	TIMSK |= (1 << TOIE0);
 
@@ -82,7 +84,6 @@ int main (void)
 	TCCR1B |= (1 << CS12); // Set up timer prescaling at Fcpu/256
 
 	sei();
-
 	for (;;) 
 	{ 
 		if (Button0Pressed) CountDown = true;
@@ -99,18 +100,22 @@ int main (void)
 			}
 		}
 		
-		unsigned char digit1 = Minutes % 10;
-		unsigned char digit0 = (Minutes - digit1) / 10;
-		unsigned char digit2 = Seconds % 10;
-		unsigned char digit3 = (Seconds - digit3) / 10;
-		PORTA = digitToSevenSegment(digit0);
-		PORTB = (1 << PB0);
-		PORTA = digitToSevenSegment(digit1) & (Seconds%2==0? 1 << PA7 : 0); // Add . to minutes every second
-		PORTB = (1 << PB1);
-		PORTA = digitToSevenSegment(digit2);
-		PORTB = (1 << PB2);
+		unsigned char digit3 = floor(Minutes / 10);
+		unsigned char digit2 = Minutes % 10;
+		unsigned char digit1 = floor(Seconds / 10);
+		unsigned char digit0 = Seconds % 10;
 		PORTA = digitToSevenSegment(digit3);
 		PORTB = (1 << PB3);
+		_delay_us(50);
+		PORTA = digitToSevenSegment(digit2) | (Seconds%2==0? 1 << PA7 : 0); // Add . to minutes every second
+		PORTB = (1 << PB2);
+		_delay_us(50);
+		PORTA = digitToSevenSegment(digit1);
+		PORTB = (1 << PB1);
+		_delay_us(50);
+		PORTA = digitToSevenSegment(digit0);
+		PORTB = (1 << PB0);
+		_delay_us(50);
 	} 
 }
 
