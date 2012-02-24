@@ -66,8 +66,8 @@ int main(void) {
     bit_clear_8(DDRC, BIT(PC0) | BIT(PC1)); // PC0, PC1 is an input
     bit_set_8(PORTC, BIT(PC0) | BIT(PC1)); // Turn on pull-up resistor on PC0, PC1
     
-    bit_set_8(TCCR0B, BIT(CS01));
-    bit_set_8(TIMSK0, BIT(TOIE0)); // turn on overflow interrupt for timer 0
+    bit_set_8(TCCR0, BIT(CS01));
+    bit_set_8(TIMSK, BIT(TOIE0)); // turn on overflow interrupt for timer 0
     
     sei(); // turn on interrupts
     

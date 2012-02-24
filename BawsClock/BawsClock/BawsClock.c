@@ -12,9 +12,13 @@
 #include <util/atomic.h>
 #include <stdbool.h>
 
-bool SecondElapsed = false,
-	 Button0Pressed = false,
-	 Button1Pressed = false;
+#define bit_read_8(var, mask)   ((var) & (uint8_t)(mask))
+
+#define BIT(x)   (1 << (x))
+
+volatile bool SecondElapsed = false,
+		 Button0Pressed = false,
+		 Button1Pressed = false;
 
 static unsigned char debounceB0,debounceB1,debouncedBState;
 // vertical stacked counter based debounce
@@ -73,7 +77,7 @@ int main (void)
 
 	/* SET UP TIMERS */
 	//Timer 0: Overflow counter for button debouncing
-	TCCR0 |= (1 << CS00) | (1 << CS01);
+	TCCR0 |= (1 << CS00) | (1 << CS01); // Prescaling set to CPU/64... 8MHz / 64 / 256 ~= overflow ever 2ms
 	TIMSK |= (1 << TOIE0);
 
 	// Timer 1: Count seconds
@@ -86,8 +90,7 @@ int main (void)
 	sei();
 	for (;;) 
 	{ 
-		if (Button0Pressed) CountDown = true;
-		if (Button1Pressed) CountDown = false;
+		if (Button0Pressed) CountDown = ~CountDown;
 		
 		if (SecondElapsed) {
 			if (CountDown) Seconds--;
@@ -127,6 +130,6 @@ ISR(TIMER0_OVF_vect) {
 	unsigned char sample = PINC;
     unsigned char changes = debounceB(sample);
 	
-	Button0Pressed = changes & (1 << PC0) && !(sample & (1 << PC0));
-	Button1Pressed = changes & (1 << PC1) && !(sample & (1 << PC1));
+	Button0Pressed = bit_read_8(changes, BIT(PC0)) && (!bit_read_8(sample, BIT(PC0)));
+	Button1Pressed = bit_read_8(changes, BIT(PC1)) && (!bit_read_8(sample, BIT(PC1)));
 }
