@@ -7,6 +7,8 @@
 #define F_CPU 8000000UL // 8Mhz Crystal Oscillator
 
 #define PRECOUNT		10
+#define BUZZER_LONG		1000000
+#define BUZZER_SHORT	500000
 
 #define DIGIT0			0
 #define DIGIT1			1
@@ -15,14 +17,15 @@
 
 #define STATE_SELECT	0
 #define STATE_CONFIGURE 1
-#define STATE_RUNNING	2
-#define STATE_FINISHED	3
+#define STATE_PRECOUNT  2
+#define STATE_RUNNING	3
+#define STATE_FINISHED	4
 
-#define MODE_COUNT		3
+#define MODE_COUNT		4
 #define MODE_STOPWATCH	1	// Stopwatch: Count from 0
 #define MODE_TIMER		2	// Count down from selected time
-#define MODE_INTERVAL	3	// x sec work, y sec pause, z rounds
-#define MODE_TABATA		4	// 20 sec work, 10 sec pause, 8 rounds
+#define MODE_TABATA		3	// 20 sec work, 10 sec pause, 8 rounds
+#define MODE_INTERVAL	4	// x sec work, y sec pause, z rounds
 
 #define KEY0_MASK		(1 << PD0)
 #define KEY1_MASK		(1 << PD1)
@@ -41,23 +44,25 @@
 
 // Define structs
 typedef struct {
+	uint8_t Minutes;
+	uint8_t Seconds;
+} clock;
+
+typedef struct {
 	uint8_t digits[4];
 	uint8_t showdigits;
 	uint8_t dots;
 } seven_segment_state;
 
 typedef struct {
-	uint8_t Seconds;
-	uint8_t Minutes;
-	uint8_t State;
-	uint8_t Mode;
-	bool CountDown;
-	int PreCount;
-} clock_state;
+	clock Work;
+	clock Pause;
+	uint8_t RoundsWork;
+	uint8_t RoundsPause;
+} interval_timer;
 
 // Global variables
 seven_segment_state ssState;
-clock_state clockState;
 
 volatile uint8_t SecondElapsed  = false;
 static volatile uint8_t key_press;
@@ -69,13 +74,15 @@ void showDigit(uint8_t digit, uint8_t port);
 
 int main (void) 
 { 
-	
-	clockState.Seconds    = 0;
-	clockState.Minutes    = 0;
-	clockState.State      = STATE_SELECT;     // Initial state is IDLE
-	clockState.Mode	      = MODE_STOPWATCH;
-	clockState.CountDown  = false;
-	clockState.PreCount   = PRECOUNT;
+	clock clockState;
+	interval_timer intervalState;
+
+	uint8_t Mode        = MODE_STOPWATCH;
+	uint8_t State       = STATE_SELECT;
+	uint8_t PreCount    = PRECOUNT;
+	uint8_t BuzzerCount = 0;
+	uint8_t Buzzer      = 0;
+	bool Interval       = false;
 	
 	/* SET UP I/O */
 	DDRA = 0xFF;		                   // Enable all port A LEDs
@@ -83,8 +90,11 @@ int main (void)
 		 | (1 << PB1) 
 		 | (1 << PB2) 
 		 | (1 << PB3);                     // Enable 4 7 segment displays
+	DDRC = (1 << PC0);
 	KEY_DDR  = 0;		                   // Set keys as input input
-	KEY_PORT = 0xFF;	                   // Pull-ups on
+	KEY_PORT = (1 << PD2) | 
+			   (1 << PD1) | 
+			   (1 << PD0);	               // Pull-ups on
 
 	/* SET UP TIMERS */
 	// Timer 0: Debouncing 2ms
@@ -101,81 +111,151 @@ int main (void)
 	sei();
 	for (;;) 
 	{ 
-		switch (clockState.State)
+		switch (State)
 		{
 		    case STATE_SELECT:
 				if (key_press & KEY0_MASK)
 				{
-					clockState.State = STATE_RUNNING;
 					key_press ^= KEY0_MASK;
+					
+					switch (Mode)
+					{
+					    case MODE_STOPWATCH:
+							clockState.Minutes          = 0;
+							clockState.Seconds          = 0;
+							Interval = false;
+							State = STATE_PRECOUNT;
+							break;
+						case MODE_TIMER:
+							clockState.Minutes			= 0;
+							clockState.Seconds			= 0;
+							intervalState.Work.Minutes  = 1;
+							intervalState.Work.Seconds  = 0;
+							intervalState.Pause.Minutes = 1;
+							intervalState.Pause.Seconds = 0;
+							intervalState.RoundsWork    = 1;
+							intervalState.RoundsPause   = 0;
+							Interval				    = true;
+							State = STATE_PRECOUNT;
+							break;
+						case MODE_TABATA:
+							clockState.Minutes			= 0;
+							clockState.Seconds			= 0;
+							intervalState.Work.Minutes  = 0;
+							intervalState.Work.Seconds  = 20;
+							intervalState.Pause.Minutes = 0;
+							intervalState.Pause.Seconds = 10;
+							intervalState.RoundsWork    = 8;
+							intervalState.RoundsPause   = 8;							
+							Interval					= true;
+							State = STATE_PRECOUNT;
+						case MODE_INTERVAL:
+							clockState.Minutes			= 0;
+							clockState.Seconds			= 0;
+							intervalState.Work.Minutes  = 0;
+							intervalState.Work.Seconds  = 20;
+							intervalState.Pause.Minutes = 0;
+							intervalState.Pause.Seconds = 10;
+							intervalState.RoundsWork    = 8;
+							intervalState.RoundsPause   = 8;							
+							Interval					= true;
+							State = STATE_PRECOUNT;
+						default:
+					        break;
+					}
 				}
 				if (key_press & KEY1_MASK) {
-					if (++clockState.Mode > MODE_COUNT) clockState.Mode = MODE_STOPWATCH;
+					if (++Mode > MODE_COUNT) Mode = MODE_STOPWATCH;
 					key_press ^= KEY1_MASK;
 				}
 				if (key_press & KEY2_MASK) {
-					if (--clockState.Mode < 1) clockState.Mode = MODE_COUNT;
+					if (--Mode < 1) Mode = MODE_COUNT;
 					key_press ^= KEY2_MASK;
 				}
 			
 				ssState.showdigits = (1 << DIGIT0);
-				ssState.digits[DIGIT0] = clockState.Mode;
+				ssState.digits[DIGIT0] = Mode;
 				
 				if (SecondElapsed > 0) {
 					ssState.dots ^= (1 << DIGIT0);
 					SecondElapsed--;
 				}
 				break;
-			//case STATE_CONFIGURE:
+			case STATE_CONFIGURE:
 				//switch (Mode)
 				//{
-				    //case MODE_STOPWATCH:
-				        //
-				        //break;
+//
 				    //default:
 				        ///* Your code here */
 				        //break;
 				//}
+			case STATE_PRECOUNT:
+				if (SecondElapsed > 0) {
+					SecondElapsed--;
+					
+					ssState.digits[DIGIT1] = floor(PreCount / 10);
+					ssState.digits[DIGIT0] = PreCount % 10;
+					ssState.showdigits = (1 << DIGIT0) | (PreCount > 9 ? (1 << DIGIT1) : 0);
+					ssState.dots = (PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
+					Buzzer = BUZZER_LONG;
+					PreCount--;
+					if (PreCount == 0) State = STATE_RUNNING;
+				}
 			case STATE_RUNNING:
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
-					if (clockState.PreCount > 0) {
-						ssState.digits[DIGIT1] = floor(clockState.PreCount / 10);
-						ssState.digits[DIGIT0] = clockState.PreCount % 10;
-						ssState.showdigits = (1 << DIGIT0) | (clockState.PreCount > 9 ? (1 << DIGIT1) : 0);
-						ssState.dots = (clockState.PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
-						clockState.PreCount--;
-					} else {
-						ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) | (1 << DIGIT2) | (1 << DIGIT3);
-						ssState.digits[DIGIT3] = floor(clockState.Minutes / 10);
-						ssState.digits[DIGIT2] = clockState.Minutes % 10;
-						ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
-						ssState.digits[DIGIT0] = clockState.Seconds % 10;
-						if (clockState.Seconds % 2 == 0) ssState.dots = (1 << DIGIT2);
-						else ssState.dots = 0;
-						
-						if (clockState.CountDown) {
-							clockState.Seconds--;
-							if (clockState.Seconds >= 60) {
-								if (clockState.Minutes > 0) { 
-									clockState.Minutes--;
-									clockState.Seconds = 59;
-								} else {
-									clockState.Seconds = 0;
-								}						
 					
-							}
+					Buzzer = BUZZER_LONG;
+					if (Interval && clockState.Minutes == 0 && clockState.Seconds == 0)
+					{
+						if (intervalState.RoundsPause > intervalState.RoundsWork)
+						{
+							clockState.Minutes = intervalState.Pause.Minutes;
+							clockState.Seconds = intervalState.Pause.Seconds;
+							intervalState.RoundsPause--;
+						}
+						else if (intervalState.RoundsWork > 0)
+						{
+							clockState.Minutes = intervalState.Work.Minutes;
+							clockState.Seconds = intervalState.Work.Seconds;
+							intervalState.RoundsWork--;
 						}
 						else
 						{
-							clockState.Seconds++;
-							if (clockState.Seconds >= 60) {
-								clockState.Seconds = 0;
-								clockState.Minutes++;
-								if (clockState.Minutes > 59) clockState.Minutes = 0;
-							}
+							// sleep?
 						}
 					}
+						
+					ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) | (1 << DIGIT2) | (1 << DIGIT3);
+					ssState.digits[DIGIT3] = floor(clockState.Minutes / 10);
+					ssState.digits[DIGIT2] = clockState.Minutes % 10;
+					ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
+					ssState.digits[DIGIT0] = clockState.Seconds % 10;
+					if (clockState.Seconds % 2 == 0) ssState.dots = (1 << DIGIT2);
+					else ssState.dots = 0;
+						
+					if (Interval) {
+						clockState.Seconds--;
+						if (clockState.Seconds >= 60) {
+							if (clockState.Minutes > 0) { 
+								clockState.Minutes--;
+								clockState.Seconds = 59;
+							} else {
+								clockState.Seconds = 0;
+							}						
+					
+						}
+					}
+					else
+					{
+						clockState.Seconds++;
+						if (clockState.Seconds >= 60) {
+							clockState.Seconds = 0;
+							clockState.Minutes++;
+							if (clockState.Minutes > 59) clockState.Minutes = 0;
+						}
+					}
+					
 				}
 			default:
 				// Do nothing
@@ -186,6 +266,16 @@ int main (void)
 		showDigit(DIGIT2, PB2);
 		showDigit(DIGIT1, PB1);
 		showDigit(DIGIT0, PB0);
+		
+		if (Buzzer > 0)
+		{
+			PORTC = (1 << PC0);
+			Buzzer--;
+		}
+		else
+		{
+			PORTC = 0;
+		}
 	} 
 }
 
