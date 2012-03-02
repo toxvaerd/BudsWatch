@@ -7,8 +7,8 @@
 #define F_CPU 8000000UL // 8Mhz Crystal Oscillator
 
 #define PRECOUNT		10
-#define BUZZER_LONG		100 // x~2ms = ~200ms
-#define BUZZER_SHORT	50  // x~2ms = ~100ms
+#define BUZZER_LONG		10
+#define BUZZER_SHORT	5  // x~2ms = ~100ms
 
 #define DIGIT0			0
 #define DIGIT1			1
@@ -44,10 +44,10 @@ typedef enum {
 } state;
 
 typedef enum {
-	MODE_STOPWATCH,	// Stopwatch: Count from 0
-	MODE_TIMER,     // Count down from selected time
-	MODE_TABATA,    // 20 sec work, 10 sec pause, 8 rounds
-	MODE_INTERVAL,  // x sec work, y sec pause, z rounds
+	MODE_STOPWATCH = 1,	// Stopwatch: Count from 0
+	MODE_TIMER = 2,     // Count down from selected time
+	MODE_TABATA = 3,    // 20 sec work, 10 sec pause, 8 rounds
+	MODE_INTERVAL = 4,  // x sec work, y sec pause, z rounds
 	MODE_LAST = MODE_INTERVAL
 } mode;
 
@@ -74,7 +74,7 @@ typedef struct {
 seven_segment_state ssState;
 
 volatile uint8_t SecondElapsed  = false;
-volatile uint8_t Buzzer = 0;
+static volatile uint8_t Buzzer = 0;
 static volatile uint8_t key_press;
 
 // Function prototypes
@@ -92,6 +92,7 @@ int main (void)
 	mode Mode           = MODE_STOPWATCH;
 	state State			= STATE_SELECT;
 	uint8_t PreCount    = PRECOUNT;
+	uint8_t BuzzCount   = 0;
 	bool Interval       = false;
 	
 	/* SET UP I/O */
@@ -159,6 +160,7 @@ int main (void)
 							intervalState.RoundsPause   = 8;							
 							Interval					= true;
 							State = STATE_PRECOUNT;
+							break;
 						case MODE_INTERVAL:
 							clockState.Minutes			= 0;
 							clockState.Seconds			= 0;
@@ -170,6 +172,7 @@ int main (void)
 							intervalState.RoundsPause   = 8;							
 							Interval					= true;
 							State = STATE_CONFIGURE;
+							break;
 						default:
 					        break;
 					}
@@ -200,11 +203,13 @@ int main (void)
 							key_press ^= KEY0_MASK;
 						}
 						if (key_press & KEY1_MASK) {
-							CountUp(&intervalState.Work.Minutes);
+							if (intervalState.Work.Minutes >= 59) intervalState.Work.Minutes = 0;
+							else intervalState.Work.Minutes++;
 							key_press ^= KEY1_MASK;
 						}
 						if (key_press & KEY2_MASK) {
-							CountDown(&intervalState.Work.Minutes);
+							if (intervalState.Work.Minutes == 0) intervalState.Work.Minutes = 59;
+							else intervalState.Work.Minutes--;
 							key_press ^= KEY2_MASK;
 						}
 						break;
@@ -212,6 +217,17 @@ int main (void)
 				        /* Your code here */
 				        break;
 				}
+				if (SecondElapsed > 0) {
+					SecondElapsed--;
+					ssState.showdigits ^= (1 << DIGIT2) | (1 << DIGIT3);
+				}
+				ssState.showdigits |= (1 << DIGIT0) | (1 << DIGIT1);
+				ssState.digits[DIGIT3] = floor(intervalState.Work.Minutes / 10);
+				ssState.digits[DIGIT2] = intervalState.Work.Minutes % 10;
+				ssState.digits[DIGIT1] = floor(intervalState.Work.Seconds / 10);
+				ssState.digits[DIGIT0] = intervalState.Work.Seconds % 10;
+				ssState.dots = 0;
+				break;
 			case STATE_PRECOUNT:
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
@@ -220,15 +236,15 @@ int main (void)
 					ssState.digits[DIGIT0] = PreCount % 10;
 					ssState.showdigits = (1 << DIGIT0) | (PreCount > 9 ? (1 << DIGIT1) : 0);
 					ssState.dots = (PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
-					Buzzer = BUZZER_LONG;
+					if (PreCount == 3) BuzzCount = 4;
 					PreCount--;
 					if (PreCount == 0) State = STATE_RUNNING;
 				}
+				break;
 			case STATE_RUNNING:
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
 					
-					Buzzer = BUZZER_LONG;
 					if (Interval && clockState.Minutes == 0 && clockState.Seconds == 0)
 					{
 						if (intervalState.RoundsPause > intervalState.RoundsWork)
@@ -280,6 +296,7 @@ int main (void)
 					}
 					
 				}
+				break;
 			default:
 				// Do nothing
 				break;
@@ -292,12 +309,11 @@ int main (void)
 		
 		if (Buzzer > 0)
 		{
-			PORTC = (1 << PC0);
-			Buzzer--;
+			PORTC |= (1 << PC0);
 		}
 		else
 		{
-			PORTC = 0;
+			PORTC &= (0 << PC0);
 		}
 	} 
 }
@@ -369,7 +385,7 @@ void showDigit(uint8_t digit, uint8_t port) {
 }
 
 void CountUp(uint8_t *current) {
-	if (*current == 59) current = 0;
+	if (*current == 59) *current = 0;
 	else *current++;
 }
 
