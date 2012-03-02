@@ -7,25 +7,17 @@
 #define F_CPU 8000000UL // 8Mhz Crystal Oscillator
 
 #define PRECOUNT		10
-#define BUZZER_LONG		1000000
-#define BUZZER_SHORT	500000
+#define BUZZER_LONG		100 // x~2ms = ~200ms
+#define BUZZER_SHORT	50  // x~2ms = ~100ms
 
 #define DIGIT0			0
 #define DIGIT1			1
 #define DIGIT2			2
 #define DIGIT3			3
 
-#define STATE_SELECT	0
-#define STATE_CONFIGURE 1
-#define STATE_PRECOUNT  2
-#define STATE_RUNNING	3
-#define STATE_FINISHED	4
-
-#define MODE_COUNT		4
-#define MODE_STOPWATCH	1	// Stopwatch: Count from 0
-#define MODE_TIMER		2	// Count down from selected time
-#define MODE_TABATA		3	// 20 sec work, 10 sec pause, 8 rounds
-#define MODE_INTERVAL	4	// x sec work, y sec pause, z rounds
+#define CONF_MINUTES    1
+#define CONF_SECONDS    2
+#define CONF_ROUNDS     3
 
 #define KEY0_MASK		(1 << PD0)
 #define KEY1_MASK		(1 << PD1)
@@ -41,6 +33,23 @@
 #include <util/delay.h>
 #include <util/atomic.h>
 #include <stdbool.h>
+
+// Define enums
+typedef enum {
+	STATE_SELECT,
+	STATE_CONFIGURE,
+	STATE_PRECOUNT,
+	STATE_RUNNING,
+	STATE_FINISHED
+} state;
+
+typedef enum {
+	MODE_STOPWATCH,	// Stopwatch: Count from 0
+	MODE_TIMER,     // Count down from selected time
+	MODE_TABATA,    // 20 sec work, 10 sec pause, 8 rounds
+	MODE_INTERVAL,  // x sec work, y sec pause, z rounds
+	MODE_LAST = MODE_INTERVAL
+} mode;
 
 // Define structs
 typedef struct {
@@ -65,23 +74,24 @@ typedef struct {
 seven_segment_state ssState;
 
 volatile uint8_t SecondElapsed  = false;
+volatile uint8_t Buzzer = 0;
 static volatile uint8_t key_press;
 
 // Function prototypes
 extern double floor(double x);
 uint8_t digitToSevenSegment(uint8_t digit);
 void showDigit(uint8_t digit, uint8_t port);
+void CountUp(uint8_t *current);
+void CountDown(uint8_t *current);
 
 int main (void) 
 { 
 	clock clockState;
 	interval_timer intervalState;
 
-	uint8_t Mode        = MODE_STOPWATCH;
-	uint8_t State       = STATE_SELECT;
+	mode Mode           = MODE_STOPWATCH;
+	state State			= STATE_SELECT;
 	uint8_t PreCount    = PRECOUNT;
-	uint8_t BuzzerCount = 0;
-	uint8_t Buzzer      = 0;
 	bool Interval       = false;
 	
 	/* SET UP I/O */
@@ -136,7 +146,7 @@ int main (void)
 							intervalState.RoundsWork    = 1;
 							intervalState.RoundsPause   = 0;
 							Interval				    = true;
-							State = STATE_PRECOUNT;
+							State = STATE_CONFIGURE;
 							break;
 						case MODE_TABATA:
 							clockState.Minutes			= 0;
@@ -159,17 +169,17 @@ int main (void)
 							intervalState.RoundsWork    = 8;
 							intervalState.RoundsPause   = 8;							
 							Interval					= true;
-							State = STATE_PRECOUNT;
+							State = STATE_CONFIGURE;
 						default:
 					        break;
 					}
 				}
 				if (key_press & KEY1_MASK) {
-					if (++Mode > MODE_COUNT) Mode = MODE_STOPWATCH;
+					if (++Mode > MODE_LAST) Mode = MODE_STOPWATCH;
 					key_press ^= KEY1_MASK;
 				}
 				if (key_press & KEY2_MASK) {
-					if (--Mode < 1) Mode = MODE_COUNT;
+					if (--Mode < 1) Mode = MODE_LAST;
 					key_press ^= KEY2_MASK;
 				}
 			
@@ -182,13 +192,26 @@ int main (void)
 				}
 				break;
 			case STATE_CONFIGURE:
-				//switch (Mode)
-				//{
-//
-				    //default:
-				        ///* Your code here */
-				        //break;
-				//}
+				switch (Mode)
+				{
+					case MODE_TIMER:
+						if (key_press & KEY0_MASK) {
+							State = STATE_PRECOUNT;
+							key_press ^= KEY0_MASK;
+						}
+						if (key_press & KEY1_MASK) {
+							CountUp(&intervalState.Work.Minutes);
+							key_press ^= KEY1_MASK;
+						}
+						if (key_press & KEY2_MASK) {
+							CountDown(&intervalState.Work.Minutes);
+							key_press ^= KEY2_MASK;
+						}
+						break;
+				    default:
+				        /* Your code here */
+				        break;
+				}
 			case STATE_PRECOUNT:
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
@@ -290,6 +313,7 @@ ISR(TIMER0_OVF_vect) {
 	static uint8_t ct0, ct1;      // holds two bit counter for each key
 	uint8_t i;
 
+	if (Buzzer > 0)	Buzzer--;
 
 	/*
 	* read current state of keys (active-low),
@@ -342,4 +366,14 @@ void showDigit(uint8_t digit, uint8_t port) {
 		PORTA = digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0);		
 		_delay_us(50);
 	}
+}
+
+void CountUp(uint8_t *current) {
+	if (*current == 59) current = 0;
+	else *current++;
+}
+
+void CountDown(uint8_t *current) {
+	if (*current == 0) *current = 59;
+	else *current--;
 }
