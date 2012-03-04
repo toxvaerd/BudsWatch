@@ -81,8 +81,6 @@ static volatile uint8_t key_press;
 extern double floor(double x);
 uint8_t digitToSevenSegment(uint8_t digit);
 void showDigit(uint8_t digit, uint8_t port);
-void CountUp(uint8_t *current);
-void CountDown(uint8_t *current);
 
 int main (void) 
 { 
@@ -165,9 +163,9 @@ int main (void)
 							clockState.Minutes			= 0;
 							clockState.Seconds			= 0;
 							intervalState.Work.Minutes  = 0;
-							intervalState.Work.Seconds  = 20;
+							intervalState.Work.Seconds  = 0;
 							intervalState.Pause.Minutes = 0;
-							intervalState.Pause.Seconds = 10;
+							intervalState.Pause.Seconds = 0;
 							intervalState.RoundsWork    = 8;
 							intervalState.RoundsPause   = 8;							
 							Interval					= true;
@@ -237,6 +235,14 @@ int main (void)
 					ssState.showdigits = (1 << DIGIT0) | (PreCount > 9 ? (1 << DIGIT1) : 0);
 					ssState.dots = (PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
 					if (PreCount == 3) BuzzCount = 4;
+					if (BuzzCount > 1) {
+						Buzzer = BUZZER_SHORT;
+						BuzzCount--;
+					}
+					else if (BuzzCount == 1) {
+						Buzzer = BUZZER_LONG;
+						BuzzCount--;
+					}
 					PreCount--;
 					if (PreCount == 0) State = STATE_RUNNING;
 				}
@@ -244,6 +250,15 @@ int main (void)
 			case STATE_RUNNING:
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
+					
+					if (BuzzCount > 1) {
+						Buzzer = BUZZER_SHORT;
+						BuzzCount--;
+					}
+					else if (BuzzCount == 1) {
+						Buzzer = BUZZER_LONG;
+						BuzzCount--;
+					}
 					
 					if (Interval && clockState.Minutes == 0 && clockState.Seconds == 0)
 					{
@@ -283,6 +298,9 @@ int main (void)
 								clockState.Seconds = 0;
 							}						
 					
+						}
+						if (clockState.Minutes == 0 && clockState.Seconds == 3) {
+							BuzzCount = 4;
 						}
 					}
 					else
@@ -382,14 +400,4 @@ void showDigit(uint8_t digit, uint8_t port) {
 		PORTA = digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0);		
 		_delay_us(50);
 	}
-}
-
-void CountUp(uint8_t *current) {
-	if (*current == 59) *current = 0;
-	else *current++;
-}
-
-void CountDown(uint8_t *current) {
-	if (*current == 0) *current = 59;
-	else *current--;
 }
