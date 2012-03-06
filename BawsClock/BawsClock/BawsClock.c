@@ -22,6 +22,11 @@
 #define DIGIT2				2
 #define DIGIT3				3
 
+#define DIGIT_B				10
+#define DIGIT_U				11
+#define DIGIT_D				12
+#define DIGIT_S				13
+
 #define KEY0_MASK			(1 << PD0)
 #define KEY1_MASK			(1 << PD1)
 #define KEY2_MASK			(1 << PD2)
@@ -243,7 +248,7 @@ int main (void)
 									if (intervalState.Work.Minutes >= 59) intervalState.Work.Minutes = 0;
 									else intervalState.Work.Minutes++;
 								}
-								if (detectKeypress(KEY1_MASK)) {
+								if (detectKeypress(KEY2_MASK)) {
 									if (intervalState.Work.Minutes == 0) intervalState.Work.Minutes = 59;
 									else intervalState.Work.Minutes--;
 								}
@@ -259,7 +264,7 @@ int main (void)
 									if (intervalState.Work.Seconds >= 59) intervalState.Work.Seconds = 0;
 									else intervalState.Work.Seconds++;
 								}
-								if (detectKeypress(KEY1_MASK)) {
+								if (detectKeypress(KEY2_MASK)) {
 									if (intervalState.Work.Seconds == 0) intervalState.Work.Seconds = 59;
 									else intervalState.Work.Seconds--;
 								}
@@ -275,7 +280,7 @@ int main (void)
 									if (intervalState.Pause.Minutes >= 59) intervalState.Pause.Minutes = 0;
 									else intervalState.Pause.Minutes++;
 								}
-								if (detectKeypress(KEY1_MASK)) {
+								if (detectKeypress(KEY2_MASK)) {
 									if (intervalState.Pause.Minutes == 0) intervalState.Pause.Minutes = 59;
 									else intervalState.Pause.Minutes--;
 								}
@@ -291,7 +296,7 @@ int main (void)
 									if (intervalState.Pause.Seconds >= 59) intervalState.Pause.Seconds = 0;
 									else intervalState.Pause.Seconds++;
 								}
-								if (detectKeypress(KEY1_MASK)) {
+								if (detectKeypress(KEY2_MASK)) {
 									if (intervalState.Pause.Seconds == 0) intervalState.Pause.Seconds = 59;
 									else intervalState.Pause.Seconds--;
 								}
@@ -312,7 +317,7 @@ int main (void)
 										if (intervalState.Pause.Minutes > 0 || intervalState.Pause.Seconds > 0) intervalState.RoundsPause++;
 									}										
 								}
-								if (detectKeypress(KEY1_MASK)) {
+								if (detectKeypress(KEY2_MASK)) {
 									if (intervalState.RoundsWork == 0) {
 										intervalState.RoundsWork = 99;
 										if (intervalState.Pause.Minutes > 0 || intervalState.Pause.Seconds > 0) intervalState.RoundsPause = 99;
@@ -334,6 +339,7 @@ int main (void)
 				        ssState.showdigits = 0;
 				        break;
 				}
+				if (SecondElapsed > 0) SecondElapsed--;
 				ssState.digits[DIGIT3] = floor(Minutes / 10);
 				ssState.digits[DIGIT2] = Minutes % 10;
 				ssState.digits[DIGIT1] = floor(Seconds / 10);
@@ -349,7 +355,16 @@ int main (void)
 					ssState.showdigits = (1 << DIGIT0) | (PreCount > 9 ? (1 << DIGIT1) : 0);
 					ssState.dots = (PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
 					if (PreCount == DEFAULT_BUZZCOUNT-1) BuzzCount = DEFAULT_BUZZCOUNT;
-					UpdateBuzzer();
+
+					if (BuzzCount > 1) {
+						Buzzer = BUZZER_SHORT;
+						BuzzCount--;
+					}
+					else if (BuzzCount == 1) {
+						Buzzer = BUZZER_LONG;
+						BuzzCount--;
+					}
+
 					PreCount--;
 					if (PreCount == 0) State = STATE_RUNNING;
 				}
@@ -358,7 +373,14 @@ int main (void)
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
 					
-					UpdateBuzzer();
+					if (BuzzCount > 1) {
+						Buzzer = BUZZER_SHORT;
+						BuzzCount--;
+					}
+					else if (BuzzCount == 1) {
+						Buzzer = BUZZER_LONG;
+						BuzzCount--;
+					}
 					
 					if (Interval && clockState.Minutes == 0 && clockState.Seconds == 0)
 					{
@@ -386,10 +408,10 @@ int main (void)
 					
 					// BUDS
 					if (clockState.Minutes == 0 && clockState.Seconds == 0) {
-						ssState.digits[DIGIT3] = 0b011111111; // B
-						ssState.digits[DIGIT2] = 0b001111110; // U
-						ssState.digits[DIGIT1] = 0b011111110; // D
-						ssState.digits[DIGIT0] = 0b011001101; // S
+						ssState.digits[DIGIT3] = DIGIT_B;
+						ssState.digits[DIGIT2] = DIGIT_U;
+						ssState.digits[DIGIT1] = DIGIT_D;
+						ssState.digits[DIGIT0] = DIGIT_S;
 					} else {
 						if (Mode == MODE_TABATA) {
 							ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) |  (1 << DIGIT3);
@@ -504,6 +526,10 @@ uint8_t digitToSevenSegment(uint8_t digit) {
 		case 7: return 0x07;
 		case 8: return 0x7F;
 		case 9: return 0x6F;
+		case DIGIT_B: return 0x7F; //0x7C; // b
+		case DIGIT_U: return 0b00111110; // u
+		case DIGIT_D: return 0x3F; //0x5E; // d
+		case DIGIT_S: return 0b01101101;
 	    default:
 			return 0x00;
 		    break;
