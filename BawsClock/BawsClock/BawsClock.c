@@ -4,31 +4,32 @@
  * Created: 17-02-2012 19:17:59
  *  Author: Morten
  */ 
-#define F_CPU 8000000UL // 8Mhz Crystal Oscillator
-
-#define PRECOUNT		10
-#define BUZZER_LONG		10
-#define BUZZER_SHORT	5  // x~2ms = ~100ms
-
-#define DIGIT0			0
-#define DIGIT1			1
-#define DIGIT2			2
-#define DIGIT3			3
-
-#define KEY0_MASK		(1 << PD0)
-#define KEY1_MASK		(1 << PD1)
-#define KEY2_MASK		(1 << PD2)
-#define KEY3_MASK		(1 << PD3)
-
-#define KEY_PIN			PIND
-#define KEY_PORT		PORTD
-#define KEY_DDR			DDRD
-
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <util/atomic.h>
 #include <stdbool.h>
+
+#define F_CPU 8000000UL // 8Mhz Crystal Oscillator
+
+#define PRECOUNT			10
+#define BUZZER_LONG			10
+#define BUZZER_SHORT		5  // x~2ms = ~100ms
+#define DEFAULT_BUZZCOUNT	4
+
+#define DIGIT0				0
+#define DIGIT1				1
+#define DIGIT2				2
+#define DIGIT3				3
+
+#define KEY0_MASK			(1 << PD0)
+#define KEY1_MASK			(1 << PD1)
+#define KEY2_MASK			(1 << PD2)
+#define KEY3_MASK			(1 << PD3)
+
+#define KEY_PIN				PIND
+#define KEY_PORT			PORTD
+#define KEY_DDR				DDRD
 
 // Define enums
 typedef enum {
@@ -82,6 +83,7 @@ seven_segment_state ssState;
 volatile uint8_t SecondElapsed  = false;
 volatile uint8_t TickCounter = 0;
 static volatile uint8_t Buzzer = 0;
+static volatile uint8_t BuzzCount = 0;
 static volatile uint8_t key_press;
 
 // Function prototypes
@@ -89,6 +91,7 @@ extern double floor(double x);
 uint8_t digitToSevenSegment(uint8_t digit);
 void showDigit(uint8_t digit, uint8_t port);
 bool detectKeypress(uint8_t mask);
+void UpdateBuzzer();
 
 int main (void) 
 { 
@@ -345,15 +348,8 @@ int main (void)
 					ssState.digits[DIGIT0] = PreCount % 10;
 					ssState.showdigits = (1 << DIGIT0) | (PreCount > 9 ? (1 << DIGIT1) : 0);
 					ssState.dots = (PreCount % 2 == 0 ? (1 << DIGIT0) : 0);
-					if (PreCount == 3) BuzzCount = 4;
-					if (BuzzCount > 1) {
-						Buzzer = BUZZER_SHORT;
-						BuzzCount--;
-					}
-					else if (BuzzCount == 1) {
-						Buzzer = BUZZER_LONG;
-						BuzzCount--;
-					}
+					if (PreCount == DEFAULT_BUZZCOUNT-1) BuzzCount = DEFAULT_BUZZCOUNT;
+					UpdateBuzzer();
 					PreCount--;
 					if (PreCount == 0) State = STATE_RUNNING;
 				}
@@ -362,14 +358,7 @@ int main (void)
 				if (SecondElapsed > 0) {
 					SecondElapsed--;
 					
-					if (BuzzCount > 1) {
-						Buzzer = BUZZER_SHORT;
-						BuzzCount--;
-					}
-					else if (BuzzCount == 1) {
-						Buzzer = BUZZER_LONG;
-						BuzzCount--;
-					}
+					UpdateBuzzer();
 					
 					if (Interval && clockState.Minutes == 0 && clockState.Seconds == 0)
 					{
@@ -403,7 +392,7 @@ int main (void)
 						ssState.digits[DIGIT0] = 0b011001101; // S
 					} else {
 						if (Mode == MODE_TABATA) {
-							ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) | (1 << DIGIT3);
+							ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) |  (1 << DIGIT3);
 							ssState.digits[DIGIT3] = intervalState.RoundsPause;
 							ssState.digits[DIGIT2] = 0;
 							ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
@@ -427,8 +416,8 @@ int main (void)
 							}						
 					
 						}
-						if (clockState.Minutes == 0 && clockState.Seconds == 3) {
-							BuzzCount = 4;
+						if (clockState.Minutes == 0 && clockState.Seconds == DEFAULT_BUZZCOUNT-1) {
+							BuzzCount = DEFAULT_BUZZCOUNT;
 						}
 					}
 					else
@@ -536,4 +525,15 @@ bool detectKeypress(uint8_t mask) {
 		return true;
 	}
 	return false;
+}
+
+void UpdateBuzzer() {
+	if (BuzzCount > 1) {
+		Buzzer = BUZZER_SHORT;
+		BuzzCount--;
+	}
+	else if (BuzzCount == 1) {
+		Buzzer = BUZZER_LONG;
+		BuzzCount--;
+	}
 }
