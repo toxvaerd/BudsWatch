@@ -15,10 +15,6 @@
 #define DIGIT2			2
 #define DIGIT3			3
 
-#define CONF_MINUTES    1
-#define CONF_SECONDS    2
-#define CONF_ROUNDS     3
-
 #define KEY0_MASK		(1 << PD0)
 #define KEY1_MASK		(1 << PD1)
 #define KEY2_MASK		(1 << PD2)
@@ -46,10 +42,20 @@ typedef enum {
 typedef enum {
 	MODE_STOPWATCH = 1,	// Stopwatch: Count from 0
 	MODE_TIMER = 2,     // Count down from selected time
-	MODE_TABATA = 3,    // 20 sec work, 10 sec pause, 8 rounds
-	MODE_INTERVAL = 4,  // x sec work, y sec pause, z rounds
-	MODE_LAST = MODE_INTERVAL
+	MODE_INTERVAL = 3,  // x sec work, y sec pause, z rounds
+	MODE_TABATA = 4,    // 20 sec work, 10 sec pause, 8 rounds
+	MODE_FGB = 5,
+	MODE_LAST = MODE_FGB
 } mode;
+
+typedef enum {
+	CONF_WORK_MINUTES,
+	CONF_WORK_SECONDS,
+	CONF_REST_MINUTES,
+	CONF_REST_SECONDS,
+	CONF_ROUNDS,
+	CONF_LAST = CONF_ROUNDS
+} interval_configure;
 
 // Define structs
 typedef struct {
@@ -74,6 +80,7 @@ typedef struct {
 seven_segment_state ssState;
 
 volatile uint8_t SecondElapsed  = false;
+volatile uint8_t TickCounter = 0;
 static volatile uint8_t Buzzer = 0;
 static volatile uint8_t key_press;
 
@@ -81,17 +88,21 @@ static volatile uint8_t key_press;
 extern double floor(double x);
 uint8_t digitToSevenSegment(uint8_t digit);
 void showDigit(uint8_t digit, uint8_t port);
+bool detectKeypress(uint8_t mask);
 
 int main (void) 
 { 
 	clock clockState;
 	interval_timer intervalState;
+	interval_configure intervalConfiguration = CONF_WORK_MINUTES;
 
 	mode Mode           = MODE_STOPWATCH;
 	state State			= STATE_SELECT;
 	uint8_t PreCount    = PRECOUNT;
 	uint8_t BuzzCount   = 0;
 	bool Interval       = false;
+	uint8_t Minutes     = 0; // Configure
+	uint8_t Seconds     = 0; // Configure
 	
 	/* SET UP I/O */
 	DDRA = 0xFF;		                   // Enable all port A LEDs
@@ -123,10 +134,8 @@ int main (void)
 		switch (State)
 		{
 		    case STATE_SELECT:
-				if (key_press & KEY0_MASK)
-				{
-					key_press ^= KEY0_MASK;
-					
+				if (detectKeypress(KEY0_MASK))
+				{					
 					switch (Mode)
 					{
 					    case MODE_STOPWATCH:
@@ -147,6 +156,18 @@ int main (void)
 							Interval				    = true;
 							State = STATE_CONFIGURE;
 							break;
+						case MODE_INTERVAL:
+							clockState.Minutes			= 0;
+							clockState.Seconds			= 0;
+							intervalState.Work.Minutes  = 1;
+							intervalState.Work.Seconds  = 0;
+							intervalState.Pause.Minutes = 1;
+							intervalState.Pause.Seconds = 0;
+							intervalState.RoundsWork    = 1;
+							intervalState.RoundsPause   = 0;							
+							Interval					= true;
+							State = STATE_CONFIGURE;
+							break;
 						case MODE_TABATA:
 							clockState.Minutes			= 0;
 							clockState.Seconds			= 0;
@@ -159,29 +180,27 @@ int main (void)
 							Interval					= true;
 							State = STATE_PRECOUNT;
 							break;
-						case MODE_INTERVAL:
+						case MODE_FGB:
 							clockState.Minutes			= 0;
 							clockState.Seconds			= 0;
-							intervalState.Work.Minutes  = 0;
+							intervalState.Work.Minutes  = 1;
 							intervalState.Work.Seconds  = 0;
 							intervalState.Pause.Minutes = 0;
 							intervalState.Pause.Seconds = 0;
-							intervalState.RoundsWork    = 8;
-							intervalState.RoundsPause   = 8;							
+							intervalState.RoundsWork    = 18;
+							intervalState.RoundsPause   = 0;							
 							Interval					= true;
-							State = STATE_CONFIGURE;
+							State = STATE_PRECOUNT;
 							break;
 						default:
 					        break;
 					}
 				}
-				if (key_press & KEY1_MASK) {
+				if (detectKeypress(KEY1_MASK)) {
 					if (++Mode > MODE_LAST) Mode = MODE_STOPWATCH;
-					key_press ^= KEY1_MASK;
 				}
-				if (key_press & KEY2_MASK) {
+				if (detectKeypress(KEY2_MASK)) {
 					if (--Mode < 1) Mode = MODE_LAST;
-					key_press ^= KEY2_MASK;
 				}
 			
 				ssState.showdigits = (1 << DIGIT0);
@@ -196,34 +215,126 @@ int main (void)
 				switch (Mode)
 				{
 					case MODE_TIMER:
-						if (key_press & KEY0_MASK) {
-							State = STATE_PRECOUNT;
-							key_press ^= KEY0_MASK;
+						if (detectKeypress(KEY0_MASK)) {
+							State = STATE_PRECOUNT;							
 						}
-						if (key_press & KEY1_MASK) {
+						if (detectKeypress(KEY1_MASK)) {
 							if (intervalState.Work.Minutes >= 59) intervalState.Work.Minutes = 0;
-							else intervalState.Work.Minutes++;
-							key_press ^= KEY1_MASK;
+							else intervalState.Work.Minutes++;							
 						}
-						if (key_press & KEY2_MASK) {
+						if (detectKeypress(KEY2_MASK)) {
 							if (intervalState.Work.Minutes == 0) intervalState.Work.Minutes = 59;
 							else intervalState.Work.Minutes--;
-							key_press ^= KEY2_MASK;
+						}
+						Minutes = intervalState.Work.Minutes;
+						Seconds = intervalState.Work.Seconds;
+						ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2);
+						break;
+					case MODE_INTERVAL:
+						switch (intervalConfiguration) {
+							case CONF_WORK_MINUTES:
+								if (detectKeypress(KEY0_MASK)) {
+									intervalConfiguration++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Work.Minutes >= 59) intervalState.Work.Minutes = 0;
+									else intervalState.Work.Minutes++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Work.Minutes == 0) intervalState.Work.Minutes = 59;
+									else intervalState.Work.Minutes--;
+								}
+								Minutes = intervalState.Work.Minutes;
+								Seconds = intervalState.Work.Seconds;
+								ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2);
+								break;
+							case CONF_WORK_SECONDS:
+								if (detectKeypress(KEY0_MASK)) {
+									intervalConfiguration++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Work.Seconds >= 59) intervalState.Work.Seconds = 0;
+									else intervalState.Work.Seconds++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Work.Seconds == 0) intervalState.Work.Seconds = 59;
+									else intervalState.Work.Seconds--;
+								}
+								Minutes = intervalState.Work.Minutes;
+								Seconds = intervalState.Work.Seconds;
+								ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1);
+								break;
+							case CONF_REST_MINUTES:
+								if (detectKeypress(KEY0_MASK)) {
+									intervalConfiguration++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Pause.Minutes >= 59) intervalState.Pause.Minutes = 0;
+									else intervalState.Pause.Minutes++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Pause.Minutes == 0) intervalState.Pause.Minutes = 59;
+									else intervalState.Pause.Minutes--;
+								}
+								Minutes = intervalState.Pause.Minutes;
+								Seconds = intervalState.Pause.Seconds;
+								ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2);
+								break;
+							case CONF_REST_SECONDS:
+								if (detectKeypress(KEY0_MASK)) {
+									intervalConfiguration++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Pause.Seconds >= 59) intervalState.Pause.Seconds = 0;
+									else intervalState.Pause.Seconds++;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.Pause.Seconds == 0) intervalState.Pause.Seconds = 59;
+									else intervalState.Pause.Seconds--;
+								}
+								Minutes = intervalState.Pause.Minutes;
+								Seconds = intervalState.Pause.Seconds;
+								ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1);
+								break;
+							case CONF_ROUNDS:
+								if (detectKeypress(KEY0_MASK)) {
+									State = STATE_PRECOUNT;
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.RoundsWork >= 99) {
+										intervalState.RoundsWork = 0;
+										intervalState.RoundsPause = 0;
+									} else {
+										intervalState.RoundsWork++;
+										if (intervalState.Pause.Minutes > 0 || intervalState.Pause.Seconds > 0) intervalState.RoundsPause++;
+									}										
+								}
+								if (detectKeypress(KEY1_MASK)) {
+									if (intervalState.RoundsWork == 0) {
+										intervalState.RoundsWork = 99;
+										if (intervalState.Pause.Minutes > 0 || intervalState.Pause.Seconds > 0) intervalState.RoundsPause = 99;
+									} else {
+										intervalState.RoundsWork--;
+										if (intervalState.Pause.Minutes > 0 || intervalState.Pause.Seconds > 0) intervalState.RoundsPause--;
+									}	
+								}
+								Minutes = intervalState.RoundsWork;
+								Seconds = intervalState.RoundsPause;
+								ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2);
+								
+								break;
+							default:
+								break;
 						}
 						break;
 				    default:
-				        /* Your code here */
+				        ssState.showdigits = 0;
 				        break;
 				}
-				if (SecondElapsed > 0) {
-					SecondElapsed--;
-					ssState.showdigits ^= (1 << DIGIT2) | (1 << DIGIT3);
-				}
-				ssState.showdigits |= (1 << DIGIT0) | (1 << DIGIT1);
-				ssState.digits[DIGIT3] = floor(intervalState.Work.Minutes / 10);
-				ssState.digits[DIGIT2] = intervalState.Work.Minutes % 10;
-				ssState.digits[DIGIT1] = floor(intervalState.Work.Seconds / 10);
-				ssState.digits[DIGIT0] = intervalState.Work.Seconds % 10;
+				ssState.digits[DIGIT3] = floor(Minutes / 10);
+				ssState.digits[DIGIT2] = Minutes % 10;
+				ssState.digits[DIGIT1] = floor(Seconds / 10);
+				ssState.digits[DIGIT0] = Seconds % 10;
 				ssState.dots = 0;
 				break;
 			case STATE_PRECOUNT:
@@ -279,14 +390,31 @@ int main (void)
 							// sleep?
 						}
 					}
-						
+
 					ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) | (1 << DIGIT2) | (1 << DIGIT3);
-					ssState.digits[DIGIT3] = floor(clockState.Minutes / 10);
-					ssState.digits[DIGIT2] = clockState.Minutes % 10;
-					ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
-					ssState.digits[DIGIT0] = clockState.Seconds % 10;
-					if (clockState.Seconds % 2 == 0) ssState.dots = (1 << DIGIT2);
+					if (clockState.Seconds % 2 == 1) ssState.dots = (1 << DIGIT2);
 					else ssState.dots = 0;
+					
+					// BUDS
+					if (clockState.Minutes == 0 && clockState.Seconds == 0) {
+						ssState.digits[DIGIT3] = 0b011111111; // B
+						ssState.digits[DIGIT2] = 0b001111110; // U
+						ssState.digits[DIGIT1] = 0b011111110; // D
+						ssState.digits[DIGIT0] = 0b011001101; // S
+					} else {
+						if (Mode == MODE_TABATA) {
+							ssState.showdigits = (1 << DIGIT0) | (1 << DIGIT1) | (1 << DIGIT3);
+							ssState.digits[DIGIT3] = intervalState.RoundsPause;
+							ssState.digits[DIGIT2] = 0;
+							ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
+							ssState.digits[DIGIT0] = clockState.Seconds % 10;	
+						} else {
+							ssState.digits[DIGIT3] = floor(clockState.Minutes / 10);
+							ssState.digits[DIGIT2] = clockState.Minutes % 10;
+							ssState.digits[DIGIT1] = floor(clockState.Seconds / 10);
+							ssState.digits[DIGIT0] = clockState.Seconds % 10;
+						}
+					}
 						
 					if (Interval) {
 						clockState.Seconds--;
@@ -400,4 +528,12 @@ void showDigit(uint8_t digit, uint8_t port) {
 		PORTA = digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0);		
 		_delay_us(50);
 	}
+}
+
+bool detectKeypress(uint8_t mask) {
+	if (key_press & mask) {
+		key_press ^= mask;
+		return true;
+	}
+	return false;
 }
