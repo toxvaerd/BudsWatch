@@ -463,6 +463,8 @@ int main (void)
 		showDigit(DIGIT2, PB2);
 		showDigit(DIGIT1, PB1);
 		showDigit(DIGIT0, PB0);
+		PORTA = 0;
+		PORTB = 0;
 		
 		if (Buzzer > 0)
 		{
@@ -541,7 +543,7 @@ void showDigit(uint8_t digit, uint8_t port) {
 		PORTA = 0; // Avoid ghosting
 		PORTB = (1 << port);
 		PORTA = digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0);		
-		_delay_us(50);
+		_delay_us(1000);
 	}
 }
 
@@ -551,15 +553,4 @@ bool detectKeypress(uint8_t mask) {
 		return true;
 	}
 	return false;
-}
-
-void UpdateBuzzer() {
-	if (BuzzCount > 1) {
-		Buzzer = BUZZER_SHORT;
-		BuzzCount--;
-	}
-	else if (BuzzCount == 1) {
-		Buzzer = BUZZER_LONG;
-		BuzzCount--;
-	}
 }
