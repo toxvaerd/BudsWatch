@@ -7,15 +7,17 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
-#include <util/atomic.h>
 #include <stdbool.h>
 
 #define F_CPU 8000000UL // 8Mhz Crystal Oscillator
 
 #define PRECOUNT			10
-#define BUZZER_LONG			10
-#define BUZZER_SHORT		5  // x~2ms = ~100ms
+#define BUZZER_LONG			200
+#define BUZZER_SHORT		100  // x~2ms = ~100ms
 #define DEFAULT_BUZZCOUNT	4
+#define BUZZ_PORT			PORTC
+#define BUZZ_SHORT_MASK		(1 << PC5)
+#define BUZZ_LONG_MASK		(1 << PC4)
 
 #define DIGIT0				0
 #define DIGIT1				1
@@ -27,14 +29,14 @@
 #define DIGIT_D				12
 #define DIGIT_S				13
 
-#define KEY0_MASK			(1 << PD0)
-#define KEY1_MASK			(1 << PD1)
-#define KEY2_MASK			(1 << PD2)
-#define KEY3_MASK			(1 << PD3)
+#define KEY0_MASK			(1 << PC0)
+#define KEY1_MASK			(1 << PC1)
+#define KEY2_MASK			(1 << PC2)
+#define KEY3_MASK			(1 << PC3)
 
-#define KEY_PIN				PIND
-#define KEY_PORT			PORTD
-#define KEY_DDR				DDRD
+#define KEY_PIN				PINC
+#define KEY_PORT			PORTC
+#define KEY_DDR				DDRC
 
 // Define enums
 typedef enum {
@@ -111,6 +113,7 @@ int main (void)
 	bool Interval       = false;
 	uint8_t Minutes     = 0; // Configure
 	uint8_t Seconds     = 0; // Configure
+	uint8_t	BuzzMask	= 0;
 	
 	/* SET UP I/O */
 	DDRA = 0xFF;		                   // Enable all port A LEDs
@@ -118,11 +121,10 @@ int main (void)
 		 | (1 << PB1) 
 		 | (1 << PB2) 
 		 | (1 << PB3);                     // Enable 4 7 segment displays
-	DDRC = (1 << PC0);
-	KEY_DDR  = 0;		                   // Set keys as input input
-	KEY_PORT = (1 << PD2) | 
-			   (1 << PD1) | 
-			   (1 << PD0);	               // Pull-ups on
+	DDRC = BUZZ_SHORT_MASK | BUZZ_LONG_MASK;
+	KEY_PORT = KEY2_MASK | 
+			   KEY1_MASK | 
+			   KEY0_MASK;	               // Pull-ups on
 
 	/* SET UP TIMERS */
 	// Timer 0: Debouncing 2ms
@@ -328,7 +330,7 @@ int main (void)
 								}
 								Minutes = intervalState.RoundsWork;
 								Seconds = intervalState.RoundsPause;
-								ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2);
+								ssState.showdigits = (1 << DIGIT3) | (1 << DIGIT2) | (1 << DIGIT1) | (1 << DIGIT0);
 								
 								break;
 							default:
@@ -358,10 +360,12 @@ int main (void)
 
 					if (BuzzCount > 1) {
 						Buzzer = BUZZER_SHORT;
+						BuzzMask = BUZZ_SHORT_MASK;
 						BuzzCount--;
 					}
 					else if (BuzzCount == 1) {
 						Buzzer = BUZZER_LONG;
+						BuzzMask = BUZZ_LONG_MASK;
 						BuzzCount--;
 					}
 
@@ -375,10 +379,12 @@ int main (void)
 					
 					if (BuzzCount > 1) {
 						Buzzer = BUZZER_SHORT;
+						BuzzMask = BUZZ_SHORT_MASK;
 						BuzzCount--;
 					}
 					else if (BuzzCount == 1) {
 						Buzzer = BUZZER_LONG;
+						BuzzMask = BUZZ_LONG_MASK;
 						BuzzCount--;
 					}
 					
@@ -463,16 +469,16 @@ int main (void)
 		showDigit(DIGIT2, PB2);
 		showDigit(DIGIT1, PB1);
 		showDigit(DIGIT0, PB0);
-		PORTA = 0;
+		PORTA = 0xFF;
 		PORTB = 0;
 		
 		if (Buzzer > 0)
 		{
-			PORTC |= (1 << PC0);
+			BUZZ_PORT |= BuzzMask;
 		}
 		else
 		{
-			PORTC &= (0 << PC0);
+			BUZZ_PORT &= ~(BUZZ_SHORT_MASK | BUZZ_LONG_MASK);
 		}
 	} 
 }
@@ -540,11 +546,11 @@ uint8_t digitToSevenSegment(uint8_t digit) {
 
 void showDigit(uint8_t digit, uint8_t port) {
 	if (ssState.showdigits & (1 << digit)) {
-		PORTA = 0; // Avoid ghosting
+		PORTA = 0xFF; // Avoid ghosting
 		PORTB = (1 << port);
-		PORTA = digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0);		
-		_delay_us(1000);
+		PORTA = ~(digitToSevenSegment(ssState.digits[digit]) | (ssState.dots & (1 << digit) ? 1 << PA7 : 0));
 	}
+	_delay_us(10000);
 }
 
 bool detectKeypress(uint8_t mask) {
